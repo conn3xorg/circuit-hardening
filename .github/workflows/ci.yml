@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Conn3x
+        env: &gh
+          GH_TOKEN: ${{ github.token }}
+        run: &install |
+          tag=$(gh release view -R conn3xorg/conn3x --json tagName -q .tagName)
+          file="conn3x_${tag#v}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/$file"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/checksums.txt"
+          grep " $file\$" checksums.txt | sha256sum -c -
+          mkdir -p bin && tar -xzf "$file" -C bin conn3x
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: conn3x version
+      - run: conn3x fmt -check -recursive
+      - name: Validate
+        run: conn3x init -backend=false && conn3x validate
+      - name: Validate the example
+        working-directory: examples/local
+        run: conn3x init -backend=false && conn3x validate
+
+  e2e:
+    needs: validate
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [rocky10, fedora45, ubuntu2404, debian13]
+    name: e2e (${{ matrix.distro }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The test host images live in the Conn3x repo.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: conn3xorg/conn3x
+          ref: main
+          path: conn3x
+          persist-credentials: false
+          sparse-checkout: test/images
+      - name: Install Conn3x
+        env: *gh
+        run: *install
+      - name: Start the ${{ matrix.distro }} host
+        working-directory: examples/local
+        env:
+          CONTAINERFILE: ${{ github.workspace }}/conn3x/test/images/${{ matrix.distro }}/Containerfile
+          # The host container is privileged, so the circuit can set kernel-wide sysctls.
+          PODMAN: sudo podman
+        run: ./up.sh
+      - name: Apply, then plan again with no changes
+        working-directory: examples/local
+        run: |
+          conn3x init
+          conn3x apply -auto-approve
+          conn3x plan -detailed-exitcode
+      # sshd -T prints the settings sshd would run with, after every drop-in.
+      # OpenSSH 10 prints keywords in mixed case, so the matches ignore case.
+      - name: Check sshd, the kernel parameters, modules and login settings
+        run: |
+          sudo podman exec -i circuit-hardening sh -eu <<'EOF'
+          t=$(sshd -T)
+          echo "$t" | grep -ix 'ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
+          echo "$t" | grep -ix 'macs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com'
+          echo "$t" | grep -i "^kexalgorithms .*curve25519-sha256"
+          ! echo "$t" | grep -i '^kexalgorithms .*\(ecdh-sha2\|group14\)' || exit 1
+          for kv in 'maxauthtries 4' 'logingracetime 30' 'x11forwarding no' 'allowagentforwarding no' 'allowtcpforwarding yes' 'kbdinteractiveauthentication no' 'loglevel VERBOSE'; do
+            echo "$t" | grep -ix "$kv"
+          done
+          ! awk '!/^#/ && $5 < 3071 { found = 1 } END { exit !found }' /etc/ssh/moduli || exit 1
+          [ "$(sysctl -n kernel.kptr_restrict)" = 2 ]
+          [ "$(sysctl -n kernel.yama.ptrace_scope)" = 2 ]
+          [ "$(sysctl -n fs.protected_regular)" = 2 ]
+          [ "$(sysctl -n fs.suid_dumpable)" = 0 ]
+          [ "$(sysctl -n net.ipv4.conf.all.log_martians)" = 1 ]
+          modprobe -n -v cramfs | grep 'install /bin/false'
+          modprobe cramfs 2>&1 | grep 'install command ./bin/false'
+          grep -ix 'UMASK 027' /etc/login.defs
+          EOF
+      - name: Check a new SSH session gets no core dumps
+        working-directory: examples/local
+        run: |
+          [ "$(ssh -p 2222 -i id_ed25519 -o UserKnownHostsFile=known_hosts root@127.0.0.1 'ulimit -Hc')" = 0 ]
+      - name: Clean up
+        if: always()
+        working-directory: examples/local
+        env:
+          PODMAN: sudo podman
+        run: ./down.sh
