@@ -105,6 +105,7 @@ Other caveats:
 - `MaxAuthTries 4` counts each key your SSH agent offers. With more than four keys loaded, point at the right one with `-i` and `IdentitiesOnly yes`.
 - On FIPS hosts, `chacha20-poly1305` isn't allowed, so set `Ciphers` to the AES ones.
 - `UMASK` in `/etc/login.defs` reaches login shells through pam_umask and new home directories through useradd. A shell that sets its own umask in `/etc/profile` or `/etc/bashrc` overrides it. Files root creates by hand with umask 027 aren't world-readable, which can surprise a web server serving them.
+- With ufw, as [circuit-firewall](https://github.com/conn3xorg/circuit-firewall) sets up on Debian and Ubuntu, leave `log_martians` to ufw. ufw sets both `log_martians` keys to 0 from `/etc/ufw/sysctl.conf` each time it starts, so every plan would show a change. Set them to `null` in `sysctl`, as the [Usage](#usage) example does, and set them in that file if you want martians logged.
 - On Ubuntu, apport turns `fs.suid_dumpable` back to 2 each time it starts, so with `core_dumps = false` the circuit stops and disables `apport.service`. It doesn't remove the package, since that takes the `ubuntu-server` metapackage with it.
 
 ## Inputs
