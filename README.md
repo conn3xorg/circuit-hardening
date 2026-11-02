@@ -1,5 +1,7 @@
 # circuit-hardening
 
+[![Conn3x grade](https://conn3x.org/circuits/hardening/grade.svg)](https://conn3x.org/circuits/hardening/grade)
+
 A Conn3x circuit that tightens SSH and the kernel on a fresh server: a modern set of SSH ciphers and key exchanges, fewer chances to guess, no forwarding, kernel settings that keep one process from reading another's secrets, filesystems and network protocols nobody on a server uses switched off, no core dumps, a tighter umask, and old remote-login daemons removed if they're there.
 
 It takes its picks from [dev-sec's hardening collection](https://github.com/dev-sec/ansible-collection-hardening) (`os_hardening` and `ssh_hardening`), [geerlingguy.security](https://github.com/geerlingguy/ansible-role-security) and [Ansible Lockdown's](https://github.com/ansible-lockdown) CIS roles, keeping the controls that are safe on a host you're about to log in to again, and leaving out the ones those projects themselves mark as likely to break things. Everything has a switch or an override.
