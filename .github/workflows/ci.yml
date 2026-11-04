@@ -99,6 +99,17 @@ jobs:
         working-directory: examples/local
         run: |
           [ "$(ssh -p 2222 -i id_ed25519 -o UserKnownHostsFile=known_hosts root@127.0.0.1 'ulimit -Hc')" = 0 ]
+      # MaxAuthTries takes a number, so sshd rejects "lots".
+      - name: Check a value sshd rejects fails the apply, never reaches the drop-in, and sshd survives a restart
+        working-directory: examples/local
+        run: |
+          printf 'module "hardening" {\n  sshd_settings = { MaxAuthTries = "lots" }\n}\n' > bad_override.tf
+          conn3x apply -auto-approve && exit 1
+          rm bad_override.tf
+          sudo podman exec circuit-hardening grep -q lots /etc/ssh/sshd_config.d/01-conn3x-hardening.conf && exit 1
+          sudo podman exec circuit-hardening sh -c 'systemctl restart sshd 2>/dev/null || systemctl restart ssh'
+          conn3x apply -auto-approve
+          conn3x plan -detailed-exitcode
       - name: Clean up
         if: always()
         working-directory: examples/local
