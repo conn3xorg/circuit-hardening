@@ -83,7 +83,7 @@ To try it on a throwaway container first, see [examples/local](examples/local).
 | cron permissions | Takes group and other access off `/etc/crontab` and the `/etc/cron.*` directories that exist. | On | `cron_permissions` |
 | Legacy daemons | Removes inetd, xinetd, telnet, rsh, NIS, talk and TFTP servers when installed. | On | `remove_packages` |
 
-On each host, in order: writes `/etc/ssh/sshd_config.d/01-conn3x-hardening.conf`, checks it with `sshd -t`, and reloads sshd (`ssh` on Debian and Ubuntu) only when it changed. A failed check stops the apply before the reload, so the running sshd keeps its old settings. Then it trims the moduli file, stops apport where it runs, sets each kernel parameter in the running kernel and in `/etc/sysctl.d`, installs `kmod` if it's missing and writes `/etc/modprobe.d/conn3x-hardening.conf`, writes `/etc/security/limits.d/90-conn3x-hardening.conf` and `/etc/systemd/coredump.conf.d/conn3x-hardening.conf`, sets `UMASK`, fixes cron's permissions and removes the legacy packages. The limits file sorts after Debian's `10-coredump-debian.conf`, which would otherwise raise the hard limit back to infinity.
+On each host, in order: writes `/etc/ssh/sshd_config.d/01-conn3x-hardening.conf`, testing it with `sshd -t` alongside the rest of the config before it replaces the old one, and reloads sshd (`ssh` on Debian and Ubuntu) only when it changed. A drop-in sshd rejects never replaces the old one: the apply fails before the reload, so the running sshd keeps its old settings, and a restart or a reboot reads the last good drop-in. Then it trims the moduli file, stops apport where it runs, sets each kernel parameter in the running kernel and in `/etc/sysctl.d`, installs `kmod` if it's missing and writes `/etc/modprobe.d/conn3x-hardening.conf`, writes `/etc/security/limits.d/90-conn3x-hardening.conf` and `/etc/systemd/coredump.conf.d/conn3x-hardening.conf`, sets `UMASK`, fixes cron's permissions and removes the legacy packages. The limits file sorts after Debian's `10-coredump-debian.conf`, which would otherwise raise the hard limit back to infinity.
 
 The drop-in sorts before the distribution's own, such as Rocky Linux and Fedora's `50-redhat.conf`, so its cipher lists take the place of the system crypto policy's for sshd. The crypto policy still applies to everything else on the host.
 
@@ -139,7 +139,7 @@ Other caveats:
 
 ## Requirements
 
-Requires Conn3x v0.6.5 or later, systemd, and an sshd that reads `/etc/ssh/sshd_config.d`, which every supported distribution's does, with a package mirror the host can reach.
+Requires Conn3x v0.7.0 or later, systemd, and an sshd that reads `/etc/ssh/sshd_config.d`, which every supported distribution's does, with a package mirror the host can reach.
 
 ## Tested on
 
